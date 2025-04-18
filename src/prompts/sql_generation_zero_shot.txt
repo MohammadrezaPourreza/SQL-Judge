@@ -1,0 +1,28 @@
+**Instructions:**
+You are an experienced database expert.
+Now you need to generate a SQL query given the database information, a question and some additional information.
+The database structure is defined by the following table schemas (comments after '--' provide additional column descriptions).
+Note that the "Example Values" are actual values from the column. Some column might contain the values that are directly related to the question. Use it to help you justify which columns to use.
+
+Given the table schema information description and the `Question`. You will be given table creation statements and you need understand the database and columns to generate a single Sqlite query that can answer the user's question.
+
+**************************
+【Table creation statements】
+{DATABASE_SCHEMA}
+
+Now is the real question, following the instruction and examples, generate the SQL query.
+**************************
+Question: 
+{QUESTION} Hint: {HINT}
+
+Respond in the following format:
+<reasoning>
+Your detailed and step-by-step thinking path toward finding the correct SQL query
+</reasoning>
+<answer>
+```sql
+Your predicted SQL query
+```
+</answer>
+
+Now is your return to respond in the above format.

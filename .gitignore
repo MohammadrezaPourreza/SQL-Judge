@@ -1,0 +1,3 @@
+data/
+results/
+src/llms/gcp_credentials/credential.json
