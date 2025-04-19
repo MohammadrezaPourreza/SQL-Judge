@@ -2,3 +2,11 @@ data/
 results/
 src/llms/gcp_credentials/credential.json
 .venv
+
+# Byte‑compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+wandb/
+finetuning_datasets/

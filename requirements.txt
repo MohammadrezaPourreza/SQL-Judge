@@ -1,6 +1,6 @@
 google-cloud-aiplatform==1.88.0
 python-dotenv==1.1.0
-anthropic==0.6.1
+anthropic
 pandas==2.2.3
 sqlglot==26.13.0
 func_timeout==4.3.5
@@ -8,3 +8,14 @@ sqlvalidator==0.0.20
 tqdm==4.67.1
 datasketch==1.6.5
 langchain-google-vertexai==2.0.20
+accelerate==1.6.0
+bitsandbytes==0.45.5
+peft==0.15.2
+transformers==4.51.3
+huggingface_hub==0.30.2
+datasets==3.4.0
+git-lfs==1.6.0
+wandb==0.19.9
+python_dotenv==1.1.0
+vllm==0.8.4
+trl==0.16.1
