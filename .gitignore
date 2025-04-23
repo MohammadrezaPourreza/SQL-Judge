@@ -12,3 +12,7 @@ wandb/
 finetuning_datasets/
 qwen2.5-Coder-7B-Instruct-sql-judge-7b-acc/
 qwen2.5-Coder-7B-Instruct-sql-judge-7b-all-dataset/
+
+# Credentials
+**credentials**
+.env
