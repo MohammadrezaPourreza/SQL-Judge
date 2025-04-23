@@ -17,5 +17,5 @@ datasets==3.4.0
 git-lfs==1.6.0
 wandb==0.19.9
 python_dotenv==1.1.0
-vllm==0.8.4
+vllm==0.8.1
 trl==0.16.1
