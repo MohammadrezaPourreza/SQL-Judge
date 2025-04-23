@@ -3,7 +3,29 @@ You are an experienced database expert responsible for evaluating SQL queries. G
 
 The database structure is provided through table creation statements. Comments after '--' give additional details about columns. The 'Example Values' provided reflect real entries from the database and may be directly relevant to the question.
 
-Evaluate the query step by step and clearly determine if the predicted SQL query accurately answers the question. Conclude your evaluation by assigning a binary label: '1' if the query correctly answers the question, or '0' if it does not.
+Evaluate the query step by step and clearly determine if the predicted SQL query accurately answers the question. Conclude your evaluation by assigning a label between 0 and 10 where '10' means the query correctly answers the question, or '0' if it does not.
+
+** Rules: **
+Evaluation Rubric (0–10 points):
+- Schema Usage (2 points)
+    - 2 points: Correctly references the appropriate table(s) and column(s).
+    - 0–1 points: Partially references needed tables or columns (deduct 1 point).
+    - 0 points: Uses wrong tables or columns.
+
+- Syntax & Execution (2 points)
+    - 2 points: Query is syntactically valid and executes without errors.
+    - 0 points: Query has syntax errors or fails to run.
+
+Correctness of query (4 points)
+    - 4 points: Query correctly uses the SQL keywords and filters
+    - 2–3 points: Query is mostly correct but have minor errors (e.g., off-by-one, missing rows).
+    - 1 point: Query is partially correct but significantly incomplete or incorrect.
+    - 0 points: Query do not answer the question.
+
+Best Practices & Efficiency (2 points)
+    - 2 points: Uses appropriate SQL constructs, avoids unnecessary subqueries or scans, and follows style conventions.
+    - 1 point: Acceptable but could be optimized or clearer.
+    - 0 points: Inefficient approach or poor style (e.g., SELECT *, missing joins conditions).
 
 **************************
 Database Schema:
@@ -26,7 +48,7 @@ Respond strictly in the following format:
 Your detailed, step-by-step reasoning about whether the predicted SQL query correctly answers the question.
 </reasoning>
 <label>
-1 or 0
+score between 0 and 10.
 </label>
 
 Provide your response now in the above format.

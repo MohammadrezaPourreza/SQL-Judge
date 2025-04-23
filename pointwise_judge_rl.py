@@ -21,10 +21,11 @@ import pandas as pd
 import re
 import wandb
 import json
+import math
 
-NAME = "sql-judge-7b-acc"
+NAME = "sql-judge-7b-all-dataset"
 
-wandb.init(project="grpo-sql-judge-training-7B-model", name=NAME)
+wandb.init(project="Judge-training-7B-model-all-llms", name=NAME)
 
 SYSTEM_PROMPT = """
 Respond in the following format:
@@ -80,15 +81,12 @@ def process_row(row):
         gold_query      = row["gold_query"]
         generated_query = row["generated_query"]
         evidence        = row["evidence"]
-        label           = row["label"]
-
-        # expensive I/O / CPU work
-        schema = get_db_schema_db_id(
-            db_id=db_id,
-            bird_database_path=os.getenv("BASE_TRAIN_DATA_PATH"),
-            queries=[gold_query, generated_query],
-        )
-        results = _format_sql_query_result(db_id, os.getenv("BASE_TRAIN_DATA_PATH"), generated_query)
+        exec_acc           = row["answer"]
+        schema          = row["schema"]
+        syntax_check   = row["syntax_check"]
+        schema_linking = row["schema_linking"]
+        ngram_jaccard = row["ngram_jaccard"]
+        results = row["formatted_result"]
 
         user_messages = RAW_PROMPT.format(
             QUESTION=question,
@@ -97,6 +95,8 @@ def process_row(row):
             SQL=generated_query,
             RESULTS=results,
         )
+
+        label = int(exec_acc) * 4 + int(syntax_check) * 2 + int(schema_linking) * 2 + int(ngram_jaccard) * 2
 
         return {
             'prompt': [
@@ -119,10 +119,22 @@ def construct_finetuning_dataset():
     dataset_name = "finetuning_datasets/pointwise_judge_acc.csv"
     if os.path.exists(dataset_name):
         ds = load_dataset('csv', data_files=dataset_name)
+
+        # select a subset of the dataset with 10k
+        # ds['train'] = ds["train"].shuffle(seed=42).select(range(8000))
         return ds.map(lambda x: {"prompt": json.loads(x["prompt"])})
 
-    df = pd.read_json("results/sample_llm_responses_bird.json")
-    df = df.sample(frac=0.25, random_state=42)
+    df = pd.read_csv("finetuning_datasets/queries_dataset.csv")
+    df = df.sample(frac=0.5, random_state=42)
+
+    # only keep at most five row for each question
+    df = (
+    df
+    .groupby('question', group_keys=False)   # avoid adding the group index
+    .apply(lambda g: g.sample(n=min(len(g), 5)))
+    .reset_index(drop=True)
+    )
+
 
     os.makedirs("finetuning_datasets", exist_ok=True)
     training_datasets = []
@@ -145,11 +157,9 @@ def construct_finetuning_dataset():
     return ds.map(lambda x: {"prompt": json.loads(x["prompt"])})
 
 
-def extract_label(response: str) -> int:
-    match = re.search(r"<label>\s*(\d)\s*</label>", response)
-    if match:
-        return int(match.group(1))
-    return -1
+def extract_label(text):
+    match = re.search(r"<label>\s*(\d+)\s*</label>", text)
+    return int(match.group(1)) if match else -1
 
 ###### --------------------- REWARD FUNCTIONS --------------------- ######
 
@@ -160,12 +170,12 @@ def acc_reward_func(prompts, completions, answer, db_id, **kwargs) -> list[float
     def evaluate(response, answer):
         try:
             if response == -1:
-                return 0.0
-            elif response == int(answer):
-                return 3.0
+                return -1.0
+            ## else use exponential decay
+            else:
+                return math.exp(-(0.5) * abs(int(answer) - int(response))) * 2
         except Exception:
             return 0.0
-        return 0.0
 
     # Use ThreadPoolExecutor to process items in parallel.
     with concurrent.futures.ThreadPoolExecutor() as executor:
@@ -196,10 +206,10 @@ def count_xml(text) -> float:
         count += 0.125
     if text.count("\n<label>\n") == 1:
         count += 0.125
-        count -= len(text.split("\n</label>\n")[-1])*0.001
+        # count -= len(text.split("\n</label>\n")[-1])*0.001
     if text.count("\n</label>") == 1:
         count += 0.125
-        count -= (len(text.split("\n</label>")[-1]) - 1)*0.001
+        # count -= (len(text.split("\n</label>")[-1]) - 1)*0.001
     label = extract_label(text)
     if label == -1:
         count -= 0.5
@@ -216,10 +226,10 @@ def train_model(dataset: Any, args: argparse.Namespace, tokenizer: Any, model: A
         vllm_device='cuda:0',
         vllm_gpu_memory_utilization=0.5,
         vllm_max_model_len=args.max_seq_length,
-        learning_rate = 5e-5,
+        learning_rate = 1e-6,
         adam_beta1 = 0.9,
         adam_beta2 = 0.99,
-        save_total_limit=1,
+        save_total_limit=100,
         weight_decay = 0.1,
         warmup_ratio = 0.1,
         lr_scheduler_type = "constant_with_warmup",
@@ -238,7 +248,7 @@ def train_model(dataset: Any, args: argparse.Namespace, tokenizer: Any, model: A
         num_train_epochs = args.epochs, # Set to 1 for a full training run
         # max_steps = 250,
         epsilon_high=0.28,
-        beta=0.0,
+        beta=0.04,
         num_iterations = 4,
         save_steps = 250,
         max_grad_norm = 0.2,
@@ -295,10 +305,10 @@ if __name__ == "__main__":
     args.add_argument("--max_completion_length", type=int, default=548)
     args.add_argument("--lora_rank", type=int, default=32)
     args.add_argument("--lora_alpha", type=int, default=16)
-    args.add_argument("--per_device_train_batch_size", type=int, default=30)
+    args.add_argument("--per_device_train_batch_size", type=int, default=16)
     args.add_argument("--epochs", type=int, default=1)
-    args.add_argument("--gradient_accumulation_steps", type=int, default=10)
-    args.add_argument("--num_generations", type=int, default=6) # Decrease if out of memory
+    args.add_argument("--gradient_accumulation_steps", type=int, default=1)
+    args.add_argument("--num_generations", type=int, default=8) # Decrease if out of memory
     args.add_argument("--hf_username", type=str, default="MrezaPRZ")
     args.add_argument("--output_model_name", type=str, default=f"qwen2.5-Coder-7B-Instruct-{NAME}")
     args.add_argument("--temperature", type=int, default=0.9)
@@ -313,7 +323,8 @@ if __name__ == "__main__":
         'validation': dataset['test']
     })
     dataset = dataset.filter(filter_samples_based_on_length, fn_kwargs={'max_seq_length': args.max_prompt_length, 'tokenizer': tokenizer})
-    print(f"No of samples: {dataset['train'].shape[0]}")
+    
+    # print(f"No of samples: {dataset['train'].shape[0]}")
     trainer, train_results = train_model(dataset, args, tokenizer, model)
     metrics = train_results.metrics
     trainer.log_metrics("train", metrics)
