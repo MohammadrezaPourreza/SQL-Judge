@@ -90,4 +90,14 @@ def call_model(model_name: str, prompt: str, temperature: float = 0.2, max_outpu
         return completion.choices[0].message.content
 
     else:
-        raise ValueError(f"Model {model_name} not supported.")
+        BASE_URL = os.getenv("BASE_URL")
+        client = OpenAI(api_key=OPENAI_API_KEY, base_url=BASE_URL)
+
+        # Request a chat completion
+        completion = client.chat.completions.create(
+            model=model_name,                   # "gpt-4o" or "gpt-4o-mini"
+            messages=[{"role": "user", "content": prompt}],
+            temperature=temperature,            # same parameter name
+            max_tokens=max_output_tokens        # analogous to max_output_tokens :contentReference[oaicite:3]{index=3}
+        )
+        return completion.choices[0].message.content

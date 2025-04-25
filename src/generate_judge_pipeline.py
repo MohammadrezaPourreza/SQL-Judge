@@ -63,6 +63,19 @@ def extract_judge_output(text: str) -> tuple:
     return reasoning, label
 
 
+def _format_sql_query_result(db_id, db_path, query) -> str:
+    try:
+        db_path = os.path.join(db_path, db_id, f"{db_id}.sqlite")
+        execution_result = execute_sql(db_path=db_path, sql=query)
+        number_of_rows = len(execution_result)
+        number_of_columns = len(execution_result[0]) if number_of_rows > 0 else 0
+        if number_of_rows > 20:
+            execution_result = execution_result[:20]
+        formatted_result = f"Rows: {number_of_rows}, Columns: {number_of_columns}, Results: {execution_result}"
+        return formatted_result[:2000]
+    except Exception as e:
+        return "Error: " + str(e)
+
 def process_sample(sample, args, gen_prompt_tpl, judge_prompt_tpl, logger):
     db_id = sample["db_id"]
     question = sample["question"]
@@ -97,6 +110,9 @@ def process_sample(sample, args, gen_prompt_tpl, judge_prompt_tpl, logger):
         try:
             if round_idx == 1:
                 # Initial generation
+                judge_response = ""
+                judge_reasoning = ""
+                judge_label = 0
                 prompt = gen_prompt_tpl.format(
                     DATABASE_SCHEMA=db_schema,
                     QUESTION=question,
@@ -122,14 +138,19 @@ def process_sample(sample, args, gen_prompt_tpl, judge_prompt_tpl, logger):
             else:
                 # Fixer generation
                 # Use previous query and its execution result
-                results, _ = round_data[-1]["exec_details"]
-                result_str = json.dumps(results, default=str)
+                results = round_data[-1]["exec_details"]
+                # result_str = json.dumps(results, default=str)
                 # First, evaluate the query using the judge model
+                filtered_schema = get_db_schema_db_id(
+                    db_id=db_id,
+                    bird_database_path=args.db_path,
+                    queries=[prev_query],
+                )
                 judge_prompt = judge_prompt_tpl.format(
-                    DATABASE_SCHEMA=db_schema,
+                    DATABASE_SCHEMA=filtered_schema,
                     QUESTION=question,
                     SQL=prev_query,
-                    RESULTS=result_str,
+                    RESULTS=results,
                     HINT=evidence,
                 )
                 logger.debug("Calling judge model for evaluation")
@@ -137,12 +158,15 @@ def process_sample(sample, args, gen_prompt_tpl, judge_prompt_tpl, logger):
                     judge_response = call_model(args.judge_model_name, judge_prompt, args.judge_temperature)
                     
                     # Extract reasoning and label from judge response
-                    reasoning, judge_label = extract_judge_output(judge_response)
+                    judge_reasoning, judge_label = extract_judge_output(judge_response)
+                    round_data[-1]["judge_response"] = judge_response
+                    round_data[-1]["judge_reasoning"] = judge_reasoning
+                    round_data[-1]["judge_label"] = judge_label
                     logger.info(f"Judge score: {judge_label}, threshold: {args.judge_threshold}")
                 except Exception as e:
                     logger.error(f"Error in judge model for db_id {db_id} round {round_idx}: {str(e)}")
                     # Create default reasoning and score
-                    reasoning = f"Error during judging: {str(e)}"
+                    judge_reasoning = f"Error during judging: {str(e)}"
                     judge_label = 0
                 
                 # If the judge score is below threshold, regenerate query
@@ -152,7 +176,7 @@ def process_sample(sample, args, gen_prompt_tpl, judge_prompt_tpl, logger):
                     prompt = gen_prompt_tpl.format(
                         DATABASE_SCHEMA=db_schema,
                         QUESTION=question,
-                        HINT=f"{evidence}\n\nPrevious attempt: {prev_query}\n\nFeedback: {reasoning}",
+                        HINT=f"{evidence}\n\nPrevious attempt: {prev_query}\n\nFeedback: {judge_reasoning}",
                     )
                     try:
                         response = call_model(args.generator_model_name, prompt, args.generator_temperature)
@@ -181,14 +205,8 @@ def process_sample(sample, args, gen_prompt_tpl, judge_prompt_tpl, logger):
             logger.debug(f"Generated query: {query}")
 
             # Execute SQL to get results for fixer (fetch sample rows)
-            try:
-                logger.debug(f"Executing query against database")
-                exec_rows = execute_sql(sqlite_path, query, fetch=args.fetch_rows, timeout=args.exec_timeout)
-                exec_err = None
-            except Exception as e:
-                logger.warning(f"Query execution error: {str(e)}")
-                exec_rows = []
-                exec_err = str(e)
+            logger.debug(f"Executing query against database")
+            exec_details = _format_sql_query_result(db_id, args.db_path, prev_query)     
 
             # Compare against gold to get correctness label
             try:
@@ -213,7 +231,7 @@ def process_sample(sample, args, gen_prompt_tpl, judge_prompt_tpl, logger):
                 "round": round_idx,
                 "query": query,
                 "model_response": response,
-                "exec_details": (exec_rows, exec_err),
+                "exec_details": exec_details,
                 "comparison": comp,
                 "label": label,
             })
@@ -328,3 +346,34 @@ if __name__ == "__main__":
     with open(output_file, "w") as f:
         json.dump(results, f, indent=2)
     logger.info(f"Results saved to {output_file}")
+
+    # compute the final round accuracy
+    accs = []
+    final_acc = 0
+    for sample in results:
+        db_id = sample["db_id"]
+        question = sample["question"]
+        gold_query = sample["gold_query"]
+        last_round = sample["rounds"][-1]
+        predicted_query = last_round["query"]
+        acc = last_round["label"]
+        if acc == 1:
+            final_acc += 1
+        accs.append({
+            "db_id": db_id,
+            "question": question,
+            "gold_query": gold_query,
+            "predicted_query": predicted_query,
+            "acc": acc
+        })
+    accs.insert(0, {
+        "db_id": "overall",
+        "question": "Overall accuracy",
+        "gold_query": "",
+        "predicted_query": "",
+        "acc": final_acc / len(results)
+    })
+    with open(os.path.join(output_dir, "final_accuracy.json"), "w") as f:
+        json.dump(accs, f, indent=2)
+
+    print(f"Final accuracy: {final_acc / len(results) * 100:.2f}%")

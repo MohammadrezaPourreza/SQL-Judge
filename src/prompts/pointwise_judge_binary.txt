@@ -1,0 +1,32 @@
+**Instructions:**
+You are an experienced database expert responsible for evaluating SQL queries. Given a database schema, a question, a predicted SQL query, and the query's execution results, you need to assess whether the query correctly answers the provided question.
+
+The database structure is provided through table creation statements. Comments after '--' give additional details about columns. The 'Example Values' provided reflect real entries from the database and may be directly relevant to the question.
+
+Evaluate the query step by step and clearly determine if the predicted SQL query accurately answers the question. Conclude your evaluation by assigning a label between 0 and 1 where '1' means the query correctly answers the question, or '0' if it does not.
+
+**************************
+Database Schema:
+{DATABASE_SCHEMA}
+
+**************************
+Question:
+{QUESTION}
+Hint: {HINT}
+
+**************************
+Predicted SQL Query:
+{SQL}
+
+Query Execution Results (truncated to 20 rows):
+{RESULTS}
+
+Respond strictly in the following format:
+<reasoning>
+Your detailed, step-by-step reasoning about whether the predicted SQL query correctly answers the question.
+</reasoning>
+<label>
+0 or 1
+</label>
+
+Provide your response now in the above format.
